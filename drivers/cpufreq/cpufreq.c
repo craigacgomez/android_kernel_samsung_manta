@@ -67,6 +67,18 @@ static DEFINE_SPINLOCK(cpufreq_driver_lock);
 static DEFINE_PER_CPU(int, cpufreq_policy_cpu);
 static DEFINE_PER_CPU(struct rw_semaphore, cpu_policy_rwsem);
 
+static unsigned int Lscreen_off_scaling_mhz = 0;
+static unsigned int Lscreen_off_scaling_mhz_orig = 1700000;
+static struct timer_list screen_on_off_timer;
+static unsigned long Lonoff = 1;
+void screen_on_off(struct work_struct *screen_on_off_work);
+static DECLARE_WORK(screen_on_off_work, screen_on_off);
+
+static unsigned int Lbluetooth_scaling_mhz = 0;
+static unsigned int Lbluetooth_scaling_mhz_orig = 0;
+static bool bluetooth_scaling_mhz_active = false;
+static bool bluetooth_overwrote_screen_off = false;
+
 #define lock_policy_rwsem(mode, cpu)					\
 int lock_policy_rwsem_##mode					\
 (int cpu)								\
@@ -417,9 +429,48 @@ static ssize_t store_##file_name					\
 	return ret ? ret : count;					\
 }
 
-store_one(scaling_min_freq, min);
-store_one(scaling_max_freq, max);
+//store_one(scaling_min_freq, min);
+//store_one(scaling_max_freq, max);
+static ssize_t store_scaling_min_freq(struct cpufreq_policy *policy, const char *buf, size_t count)
+{
+	unsigned int ret = -EINVAL;
+	unsigned int value = 0;
+	struct cpufreq_policy new_policy;
 
+	ret = sscanf(buf, "%u", &value);
+	if (ret != 1)
+		return -EINVAL;
+
+	ret = cpufreq_get_policy(&new_policy, policy->cpu);
+	new_policy.min = value;
+	ret = __cpufreq_set_policy(policy, &new_policy);	
+	policy->user_policy.min = policy->min;
+
+	Lbluetooth_scaling_mhz_orig = value;
+
+	return count;
+}
+
+static ssize_t store_scaling_max_freq(struct cpufreq_policy *policy, const char *buf, size_t count)
+{
+	unsigned int ret = -EINVAL;
+	unsigned int value = 0;
+	struct cpufreq_policy new_policy;
+
+	ret = sscanf(buf, "%u", &value);
+	if (ret != 1)
+		return -EINVAL;
+
+	ret = cpufreq_get_policy(&new_policy, policy->cpu);
+	new_policy.max = value;
+	ret = __cpufreq_set_policy(policy, &new_policy);	
+	policy->user_policy.max = policy->max;
+
+	if (value != 800000 && value != 1700000)
+		Lscreen_off_scaling_mhz_orig = value;
+	
+	return count;
+}
 /**
  * show_cpuinfo_cur_freq - current CPU frequency as detected by hardware
  */
@@ -448,6 +499,117 @@ static ssize_t show_scaling_governor(struct cpufreq_policy *policy, char *buf)
 	return -EINVAL;
 }
 
+void screen_on_off(struct work_struct *notification_off_work)
+{
+	struct cpufreq_policy *policy = cpufreq_cpu_get(0);
+	struct cpufreq_policy new_policy;
+	unsigned int ret = -EINVAL;
+
+	pr_alert("SET_SCREEN_ON_OFF_MHZ - %lx - so=%d - soo=%d\n", Lonoff, Lscreen_off_scaling_mhz, Lscreen_off_scaling_mhz_orig);
+
+	if (Lonoff == 0 && Lscreen_off_scaling_mhz > 0)
+	{
+		if (!bluetooth_scaling_mhz_active)
+		{
+			ret = cpufreq_get_policy(&new_policy, policy->cpu);
+			new_policy.max = Lscreen_off_scaling_mhz;
+			ret = __cpufreq_set_policy(policy, &new_policy);	
+			policy->user_policy.max = policy->max;
+			del_timer(&screen_on_off_timer);
+		}
+		else
+			bluetooth_overwrote_screen_off = true;
+	}
+	else if (Lonoff == 1 && Lscreen_off_scaling_mhz > 0)
+	{
+		ret = cpufreq_get_policy(&new_policy, policy->cpu);
+		if (Lscreen_off_scaling_mhz_orig != 0)
+			new_policy.max = Lscreen_off_scaling_mhz_orig;		
+		else
+			new_policy.max = 1700000;		
+		ret = __cpufreq_set_policy(policy, &new_policy);	
+		policy->user_policy.max = policy->max;
+	}
+}
+
+static void handle_screen_on_off(unsigned long data)
+{
+	schedule_work(&screen_on_off_work);
+}
+
+void set_screen_on_off_mhz(unsigned long onoff)
+{
+	Lonoff = onoff;
+	if (onoff == 1)
+		mod_timer(&screen_on_off_timer, jiffies + msecs_to_jiffies(1000));
+	else
+		mod_timer(&screen_on_off_timer, jiffies + msecs_to_jiffies(5000));
+}
+
+static ssize_t show_screen_off_scaling_mhz(struct cpufreq_policy *policy, char *buf)
+{
+	return sprintf(buf, "%u\n", Lscreen_off_scaling_mhz);
+}
+static ssize_t store_screen_off_scaling_mhz(struct cpufreq_policy *policy,
+					const char *buf, size_t count)
+{
+	unsigned int value = 0;
+	unsigned int ret;
+	ret = sscanf(buf, "%u", &value);
+	Lscreen_off_scaling_mhz = value;
+
+	return count;
+}
+
+static ssize_t show_bluetooth_scaling_mhz(struct cpufreq_policy *policy, char *buf)
+{
+	return sprintf(buf, "%u\n", Lbluetooth_scaling_mhz);
+}
+
+static ssize_t store_bluetooth_scaling_mhz(struct cpufreq_policy *policy, const char *buf, size_t count)
+{
+	unsigned int value = 0;
+	unsigned int ret;
+	ret = sscanf(buf, "%u", &value);
+	Lbluetooth_scaling_mhz = value;
+	
+	return count;
+}
+
+void set_bluetooth_state(unsigned int val)
+{
+	struct cpufreq_policy *policy = cpufreq_cpu_get(0);
+	struct cpufreq_policy new_policy;
+	unsigned int ret = -EINVAL;
+
+	pr_alert("SET_BLUETOOTH_STATE - %d\n", val);
+
+	if (val == 1)
+	{
+		bluetooth_scaling_mhz_active = true;
+		ret = cpufreq_get_policy(&new_policy, policy->cpu);
+		new_policy.min = Lbluetooth_scaling_mhz;
+		ret = __cpufreq_set_policy(policy, &new_policy);	
+		policy->user_policy.min = policy->min;
+	}
+	else
+	{
+		bluetooth_scaling_mhz_active = false;
+		ret = cpufreq_get_policy(&new_policy, policy->cpu);
+		if (Lbluetooth_scaling_mhz_orig > 0)
+			new_policy.min = Lbluetooth_scaling_mhz_orig;
+		
+		if (bluetooth_overwrote_screen_off && Lonoff == 0)
+			new_policy.max = Lscreen_off_scaling_mhz;
+			
+		ret = __cpufreq_set_policy(policy, &new_policy);	
+		policy->user_policy.min = policy->min;
+		
+		if (bluetooth_overwrote_screen_off && Lonoff == 0)
+			policy->user_policy.max = policy->max;
+		bluetooth_overwrote_screen_off = false;
+	}
+}
 
 /**
  * store_scaling_governor - store policy for the specified CPU
@@ -629,7 +791,9 @@ cpufreq_freq_attr_rw(scaling_min_freq);
 cpufreq_freq_attr_rw(scaling_max_freq);
 cpufreq_freq_attr_rw(scaling_governor);
 cpufreq_freq_attr_rw(scaling_setspeed);
+cpufreq_freq_attr_rw(screen_off_scaling_mhz);
 cpufreq_freq_attr_rw(UV_mV_table);
+cpufreq_freq_attr_rw(bluetooth_scaling_mhz);
 
 static struct attribute *default_attrs[] = {
 	&cpuinfo_min_freq.attr,
@@ -644,6 +808,8 @@ static struct attribute *default_attrs[] = {
 	&scaling_available_governors.attr,
 	&scaling_setspeed.attr,
 	&UV_mV_table.attr,
+	&screen_off_scaling_mhz.attr,
+	&bluetooth_scaling_mhz.attr,
 	NULL
 };
 
@@ -1979,6 +2145,8 @@ static int __init cpufreq_core_init(void)
 	cpufreq_global_kobject = kobject_create_and_add("cpufreq", &cpu_subsys.dev_root->kobj);
 	BUG_ON(!cpufreq_global_kobject);
 	register_syscore_ops(&cpufreq_syscore_ops);
+
+	setup_timer(&screen_on_off_timer, handle_screen_on_off, Lonoff);
 
 	return 0;
 }

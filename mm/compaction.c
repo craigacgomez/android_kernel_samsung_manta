@@ -701,7 +701,7 @@ static int __compact_pgdat(pg_data_t *pgdat, struct compact_control *cc)
 		if (cc->order > 0) {
 			int ok = zone_watermark_ok(zone, cc->order,
 						low_wmark_pages(zone), 0, 0);
-			if (ok && cc->order > zone->compact_order_failed)
+			if (ok && cc->order >= zone->compact_order_failed)
 				zone->compact_order_failed = cc->order + 1;
 			/* Currently async compaction is never deferred. */
 			else if (!ok && cc->sync)
@@ -725,18 +725,18 @@ int compact_pgdat(pg_data_t *pgdat, int order)
 	return __compact_pgdat(pgdat, &cc);
 }
 
-static int compact_node(int nid)
+static int compact_node(int nid, bool sync)
 {
 	struct compact_control cc = {
 		.order = -1,
-		.sync = true,
+		.sync = sync,
 	};
 
 	return __compact_pgdat(NODE_DATA(nid), &cc);
 }
 
 /* Compact all nodes in the system */
-static int compact_nodes(void)
+int compact_nodes(bool sync)
 {
 	int nid;
 
@@ -744,7 +744,7 @@ static int compact_nodes(void)
 	lru_add_drain_all();
 
 	for_each_online_node(nid)
-		compact_node(nid);
+		compact_node(nid, sync);
 
 	return COMPACT_COMPLETE;
 }
@@ -757,7 +757,7 @@ int sysctl_compaction_handler(struct ctl_table *table, int write,
 			void __user *buffer, size_t *length, loff_t *ppos)
 {
 	if (write)
-		return compact_nodes();
+		return compact_nodes(true);
 
 	return 0;
 }
