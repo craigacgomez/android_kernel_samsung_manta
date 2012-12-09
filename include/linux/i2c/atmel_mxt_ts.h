@@ -45,6 +45,4 @@ struct mxt_platform_data {
 	unsigned int reset_msec;
 };
 
-extern bool s2w_enabled;
-
 #endif /* __LINUX_ATMEL_MXT_TS_H */
