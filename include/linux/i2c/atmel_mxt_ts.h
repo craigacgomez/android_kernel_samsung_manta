@@ -45,4 +45,7 @@ struct mxt_platform_data {
 	unsigned int reset_msec;
 };
 
+extern bool s2w_enabled;
+extern bool s2w_enabled_plug;
+extern void slide2wake_change(unsigned int val);
 #endif /* __LINUX_ATMEL_MXT_TS_H */

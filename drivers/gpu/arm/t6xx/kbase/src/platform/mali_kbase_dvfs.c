@@ -88,8 +88,9 @@ static mali_dvfs_info mali_dvfs_infotbl[] = {
 	{1025000, 266, 60, 78, 0, 400000},
 	{1075000, 350, 70, 80, 0, 400000},
 	{1125000, 400, 70, 80, 0, 667000},
-	{1150000, 450, 76, 99, 0, 800000},
-	{1200000, 533, 99, 100, 0, 800000},
+	{1150000, 450, 70, 80, 0, 800000},
+	{1200000, 533, 76, 99, 0, 800000},
+	{1200000, 612, 99, 100, 0, 800000},
 };
 
 #define MALI_DVFS_STEP	ARRAY_SIZE(mali_dvfs_infotbl)
@@ -121,8 +122,12 @@ static void update_time_in_state(int level);
 static mali_dvfs_status mali_dvfs_status_current;
 #ifdef MALI_DVFS_ASV_ENABLE
 static const unsigned int mali_dvfs_vol_default[]=
-	{ 925000, 925000, 1025000, 1075000, 1125000, 1150000, 1200000};
+	{ 925000, 925000, 1025000, 1075000, 1125000, 1150000, 1200000, 1200000};
 
+void hlpr_set_volt_tablee_G3D(unsigned int i, unsigned int val)
+{
+	mali_dvfs_infotbl[MALI_DVFS_STEP-1-i].voltage=val;
+}
 
 static int mali_dvfs_update_asv(int cmd)
 {
@@ -590,7 +595,7 @@ void kbase_platform_dvfs_set_clock(kbase_device *kbdev, int freq)
 
 	switch(freq) {
 		case 612:
-			gpll_rate = 533000000;
+			gpll_rate = 612000000;
 			aclk_400_rate = 612000000;
 			break;
 		case 533:
