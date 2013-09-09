@@ -137,13 +137,13 @@ static void tmu_monitor(struct work_struct *work)
 		!info->mem_throttled) {
 		set_refresh_period(FREQ_IN_PLL, info->auto_refresh_mem_throttle);
 		info->mem_throttled = true;
-		dev_dbg(info->dev, "set auto refresh period %dns\n",
+		dev_dbg(info->dev, "mem_throttled: set auto refresh period %dns\n",
 				info->auto_refresh_mem_throttle);
 	} else if (cur_temp <= data->ts.stop_mem_throttle &&
 		info->mem_throttled) {
 		set_refresh_period(FREQ_IN_PLL, info->auto_refresh_normal);
 		info->mem_throttled = false;
-		dev_dbg(info->dev, "set auto refresh period %dns\n",
+		dev_dbg(info->dev, "mem_unthrottled: set auto refresh period %dns\n",
 				info->auto_refresh_normal);
 	}
 
